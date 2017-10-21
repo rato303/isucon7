@@ -1,3 +1,10 @@
+const LRU = require('lru-cache');
+const LRU_OPTIONS = {
+  max: 500,
+  maxAge: 24 * 60 * 60 * 1000
+};
+const CACHE = LRU(LRU_OPTIONS);
+
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -462,7 +469,17 @@ function ext2mime(ext) {
 
 app.get('/icons/:fileName', getIcon)
 function getIcon(req, res) {
-  const { fileName } = req.params
+  const { fileName } = req.params;
+  if (CACHE.has(fileName)) {
+    const ext = path.extname(fileName) || ''
+    const mime = ext2mime(ext)
+    if (!mime) {
+      res.status(404).end()
+      return
+    }
+    res.header({ 'Content-Type': mime }).end(CACHE.get(fileName));
+    return;
+  }
   return pool.query('SELECT * FROM image WHERE name = ?', [fileName])
     .then(([row]) => {
       const ext = path.extname(fileName) || ''
@@ -470,6 +487,9 @@ function getIcon(req, res) {
       if (!row || !mime) {
         res.status(404).end()
         return
+      }
+      if (!CACHE.has(fileName)) {
+        CACHE.set(fileName, row.data);
       }
       res.header({ 'Content-Type': mime }).end(row.data)
     })
